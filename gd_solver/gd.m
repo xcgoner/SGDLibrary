@@ -97,7 +97,7 @@ function [w, infos] = gd(problem, options)
     infos.cost = f_val;     
     optgap = f_val - f_opt;
     infos.optgap = optgap;
-    grad = problem.full_grad(w);
+    grad = problem.full_grad(w) / problem.samples();
     gnorm = norm(grad);
     infos.gnorm = gnorm;
     if store_w
@@ -141,7 +141,7 @@ function [w, infos] = gd(problem, options)
 
         
         % calculate gradient
-        grad = problem.full_grad(w);
+        grad = problem.full_grad(w) / problem.samples();
 
         % update iter        
         iter = iter + 1;

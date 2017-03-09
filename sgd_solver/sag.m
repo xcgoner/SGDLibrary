@@ -145,9 +145,9 @@ function [w, infos] = sag(problem, options)
             
             % update average gradient
             if strcmp(sub_mode, 'SAG')
-                grad_ave = grad_ave + (grad - grad_array(:, j)) / num_of_bachces;
+                grad_ave = grad_ave + (grad - grad_array(:, j)) / problem.samples();
             else % SAGA
-                grad_ave = grad_ave + (grad - grad_array(:, j));                
+                grad_ave = grad_ave + (grad - grad_array(:, j)) / length(indice_j);                
             end
             % replace with new grad
             grad_array(:, j) = grad;  
@@ -168,7 +168,7 @@ function [w, infos] = sag(problem, options)
         f_val = problem.cost(w);
         optgap = f_val - f_opt; 
         % calculate norm of full gradient
-        gnorm = norm(problem.full_grad(w));      
+        gnorm = norm(problem.full_grad(w) / problem.samples());      
 
         % store infos
         infos.iter = [infos.iter epoch];

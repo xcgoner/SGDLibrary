@@ -138,7 +138,7 @@ function [w, infos] = svrg(problem, options)
         end
 
         % compute full gradient
-        full_grad = problem.grad(w,1:n);
+        full_grad = problem.full_grad(w) / problem.samples();
         % store w
         w0 = w;
         grad_calc_count = grad_calc_count + n;        
@@ -153,8 +153,8 @@ function [w, infos] = svrg(problem, options)
             % calculate variance reduced gradient
             start_index = (j-1) * batch_size + 1;
             indice_j = perm_idx(start_index:start_index+batch_size-1);
-            grad = problem.grad(w, indice_j);
-            grad_0 = problem.grad(w0, indice_j);
+            grad = problem.grad(w, indice_j) / length(indice_j);
+            grad_0 = problem.grad(w0, indice_j) / length(indice_j);
             
             % update w
             w = w - step * (full_grad + grad - grad_0);
@@ -172,7 +172,7 @@ function [w, infos] = svrg(problem, options)
         f_val = problem.cost(w);
         optgap = f_val - f_opt; 
         % calculate norm of full gradient
-        gnorm = norm(problem.full_grad(w));              
+        gnorm = norm(problem.full_grad(w) / problem.samples());              
 
         % store infos
         infos.iter = [infos.iter epoch];

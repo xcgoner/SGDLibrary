@@ -139,7 +139,7 @@ function [w, infos] = sgd(problem, options)
             grad =  problem.grad(w, indice_j);
 
             % update w
-            w = w - step * grad;
+            w = w - step * grad / length(indice_j);
             iter = iter + 1;
         end
         

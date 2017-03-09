@@ -1,5 +1,5 @@
-function [w, infos] = sgd(problem, options)
-% Stochastic gradient descent algorithm.
+function [w, infos] = dgdvr(problem, options)
+% Stochastic average descent (SAG) algorithm.
 %
 % Inputs:
 %       problem     function (cost/grad/hess)
@@ -8,23 +8,28 @@ function [w, infos] = sgd(problem, options)
 %       w           solution of w
 %       infos       information
 %
+% References:
+%       N. L. Roux, M. Schmidt, and F. R. Bach, 
+%       "A stochastic gradient method with an exponential convergence rate for finite training sets,"
+%       NIPS, 2012.
+%    
 % This file is part of SGDLibrary.
 %
 % Created by H.Kasai on Feb. 15, 2016
-% Modified by H.Kasai on Oct. 25, 2016
+% Modified by H.Kasai on Jan. 12, 2017
 
 
     % set dimensions and samples
     d = problem.dim();
-    n = problem.samples();  
+    n = problem.samples();
 
     % extract options
-    if ~isfield(options, 'step')
+    if ~isfield(options, 'step_init')
         step_init = 0.1;
     else
-        step_init = options.step;
+        step_init = options.step_init;
     end
-    step = step_init;    
+    step = step_init;
     
     if ~isfield(options, 'step_alg')
         step_alg = 'fix';
@@ -36,7 +41,7 @@ function [w, infos] = sgd(problem, options)
         else
             step_alg = 'decay';
         end
-    end  
+    end    
     
     if ~isfield(options, 'lambda')
         lambda = 0.1;
@@ -48,17 +53,17 @@ function [w, infos] = sgd(problem, options)
         tol_optgap = 1.0e-12;
     else
         tol_optgap = options.tol_optgap;
-    end        
+    end         
 
     if ~isfield(options, 'batch_size')
-        batch_size = 1;
+        batch_size = 10;
     else
         batch_size = options.batch_size;
     end
     num_of_bachces = floor(n / batch_size);    
     
     if ~isfield(options, 'max_epoch')
-        max_epoch = inf;
+        max_epoch = 100;
     else
         max_epoch = options.max_epoch;
     end 
@@ -69,16 +74,16 @@ function [w, infos] = sgd(problem, options)
         w = options.w_init;
     end 
     
-    if ~isfield(options, 'f_sol')
-        f_sol = -Inf;
+    if ~isfield(options, 'sub_mode')
+        sub_mode = 'SAG';
     else
-        f_sol = options.f_sol;
-    end 
+        sub_mode = options.sub_mode;
+    end     
     
-    if ~isfield(options, 'permute_on')
-        permute_on = 1;
+    if ~isfield(options, 'f_opt')
+        f_opt = -Inf;
     else
-        permute_on = options.permute_on;
+        f_opt = options.f_opt;
     end     
     
     if ~isfield(options, 'verbose')
@@ -87,10 +92,10 @@ function [w, infos] = sgd(problem, options)
         verbose = options.verbose;
     end
     
-    if ~isfield(options, 'store_sol')
-        store_sol = false;
+    if ~isfield(options, 'store_w')
+        store_w = false;
     else
-        store_sol = options.store_sol;
+        store_w = options.store_w;
     end      
     
     
@@ -98,6 +103,10 @@ function [w, infos] = sgd(problem, options)
     iter = 0;
     epoch = 0;
     grad_calc_count = 0;
+    
+    % prepare an array of gradients, and a valiable of average gradient
+    grad_array = zeros(d, num_of_bachces);
+    grad_ave = mean(grad_array, 2);
 
     % store first infos
     clear infos;
@@ -105,40 +114,46 @@ function [w, infos] = sgd(problem, options)
     infos.time = 0;    
     infos.grad_calc_count = grad_calc_count;
     f_val = problem.cost(w);
-    optgap = f_val - f_sol;
+    optgap = f_val - f_opt;
     infos.optgap = optgap;
+    infos.gnorm = norm(problem.full_grad(w));        
     infos.cost = f_val;
-    if store_sol
+    if store_w
         infos.w = w;       
     end      
 
     % set start time
     start_time = tic();
+    
+    % permute samples (ToDo)
+    perm_idx = 1:n;     
 
     % main loop
     while (optgap > tol_optgap) && (epoch < max_epoch)
-
-        % permute samples
-        if permute_on
-            perm_idx = randperm(n);
-        else
-            perm_idx = 1:n;
-        end
 
         for j=1:num_of_bachces
             
             % update step-size
             if strcmp(step_alg, 'decay')
                 step = step_init / (1 + step_init * lambda * iter);
-            end     
+            end
             
             % calculate gradient
             start_index = (j-1) * batch_size + 1;
             indice_j = perm_idx(start_index:start_index+batch_size-1);
-            grad =  problem.grad(w, indice_j);
-
+            grad = problem.grad(w, indice_j);
+            
+            % update average gradient
+            if strcmp(sub_mode, 'SAG')
+                grad_ave = grad_ave + (grad - grad_array(:, j)) / num_of_bachces;
+            else % SAGA
+                grad_ave = grad_ave + (grad - grad_array(:, j));                
+            end
+            % replace with new grad
+            grad_array(:, j) = grad;  
+            
             % update w
-            w = w - step * grad;
+            w = w - step * grad_ave;
             iter = iter + 1;
         end
         
@@ -149,9 +164,11 @@ function [w, infos] = sgd(problem, options)
         grad_calc_count = grad_calc_count + num_of_bachces * batch_size;        
         % update epoch
         epoch = epoch + 1;
-        % calculate optimality gap
+        % calculate optgap
         f_val = problem.cost(w);
-        optgap = f_val - f_sol;        
+        optgap = f_val - f_opt; 
+        % calculate norm of full gradient
+        gnorm = norm(problem.full_grad(w));      
 
         % store infos
         infos.iter = [infos.iter epoch];
@@ -159,21 +176,20 @@ function [w, infos] = sgd(problem, options)
         infos.grad_calc_count = [infos.grad_calc_count grad_calc_count];
         infos.optgap = [infos.optgap optgap];
         infos.cost = [infos.cost f_val];
-        if store_sol
+        infos.gnorm = [infos.gnorm gnorm];            
+        if store_w
             infos.w = [infos.w w];         
-        end           
+        end          
 
         % display infos
         if verbose > 0
-            fprintf('SGD: Epoch = %03d, cost = %.16e, optgap = %.4e\n', epoch, f_val, optgap);
+            fprintf('%s: Epoch = %03d, cost = %.16e, optgap = %.4e\n', sub_mode, epoch, f_val, optgap);
         end
-
     end
     
     if optgap < tol_optgap
         fprintf('Optimality gap tolerance reached: tol_optgap = %g\n', tol_optgap);
     elseif epoch == max_epoch
         fprintf('Max epoch reached: max_epochr = %g\n', max_epoch);
-    end
-    
+    end    
 end
