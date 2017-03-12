@@ -130,31 +130,48 @@ function [w, infos] = sag(problem, options)
 
     % main loop
     while (optgap > tol_optgap) && (epoch < max_epoch)
-
-        for j=1:num_of_bachces
-            
+        
+        if epoch == 1
+            for j=1:num_of_bachces
+                % calculate gradient
+                start_index = (j-1) * batch_size + 1;
+                indice_j = perm_idx(start_index:start_index+batch_size-1);
+                grad_array(:, j) = problem.grad(w, indice_j);  
+            end
+            grad_ave = sum(grad_array, 2) / problem.samples();
             % update step-size
             if strcmp(step_alg, 'decay')
                 step = step_init / (1 + step_init * lambda * iter);
             end
-            
-            % calculate gradient
-            start_index = (j-1) * batch_size + 1;
-            indice_j = perm_idx(start_index:start_index+batch_size-1);
-            grad = problem.grad(w, indice_j);
-            
-            % update average gradient
-            if strcmp(sub_mode, 'SAG')
-                grad_ave = grad_ave + (grad - grad_array(:, j)) / problem.samples();
-            else % SAGA
-                grad_ave = grad_ave + (grad - grad_array(:, j)) / length(indice_j);                
-            end
-            % replace with new grad
-            grad_array(:, j) = grad;  
-            
             % update w
             w = w - step * grad_ave;
             iter = iter + 1;
+        else
+            for j=1:num_of_bachces
+
+                % update step-size
+                if strcmp(step_alg, 'decay')
+                    step = step_init / (1 + step_init * lambda * iter);
+                end
+
+                % calculate gradient
+                start_index = (j-1) * batch_size + 1;
+                indice_j = perm_idx(start_index:start_index+batch_size-1);
+                grad = problem.grad(w, indice_j);
+
+                % update average gradient
+                if strcmp(sub_mode, 'SAG')
+                    grad_ave = grad_ave + (grad - grad_array(:, j)) / problem.samples();
+                else % SAGA
+                    grad_ave = grad_ave + (grad - grad_array(:, j)) / batch_size;                
+                end
+                % replace with new grad
+                grad_array(:, j) = grad;  
+
+                % update w
+                w = w - step * grad_ave;
+                iter = iter + 1;
+            end
         end
         
         % measure elapsed time

@@ -141,9 +141,15 @@ function [w, infos] = svrg(problem, options)
         full_grad = problem.full_grad(w) / problem.samples();
         % store w
         w0 = w;
-        grad_calc_count = grad_calc_count + n;        
+        grad_calc_count = grad_calc_count + n;   
+        
+        nbatches = round(num_of_bachces * 0.5);
+        
+        perm_batches = randi(num_of_bachces, 1, nbatches);
 
-        for j=1:num_of_bachces
+        for jj=1:nbatches
+            
+            j = perm_batches(jj);
             
             % update step-size
             if strcmp(step_alg, 'decay')
@@ -153,8 +159,8 @@ function [w, infos] = svrg(problem, options)
             % calculate variance reduced gradient
             start_index = (j-1) * batch_size + 1;
             indice_j = perm_idx(start_index:start_index+batch_size-1);
-            grad = problem.grad(w, indice_j) / length(indice_j);
-            grad_0 = problem.grad(w0, indice_j) / length(indice_j);
+            grad = problem.grad(w, indice_j) / batch_size;
+            grad_0 = problem.grad(w0, indice_j) / batch_size;
             
             % update w
             w = w - step * (full_grad + grad - grad_0);
@@ -165,7 +171,7 @@ function [w, infos] = svrg(problem, options)
         elapsed_time = toc(start_time);
         
         % count gradient evaluations
-        grad_calc_count = grad_calc_count + j * batch_size;        
+        grad_calc_count = grad_calc_count + nbatches * batch_size;        
         % update epoch
         epoch = epoch + 1;
         % calculate optgap

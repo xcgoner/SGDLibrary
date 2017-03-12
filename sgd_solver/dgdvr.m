@@ -62,6 +62,20 @@ function [w, infos] = dgdvr(problem, options)
     end
     num_of_bachces = floor(n / batch_size);    
     
+    if ~isfield(options, 'prob')
+        prob_max = 0.6;
+    else
+        prob_max = options.prob;
+    end  
+    
+    if ~isfield(options, 'prob_decay')
+        prob_decay_init = prob_max;
+        prob_decay_rate = 0;
+    else
+        prob_decay_init = options.prob_decay.init;
+        prob_decay_rate = options.prob_decay.rate;
+    end
+    
     if ~isfield(options, 'max_epoch')
         max_epoch = 100;
     else
@@ -75,7 +89,7 @@ function [w, infos] = dgdvr(problem, options)
     end 
     
     if ~isfield(options, 'sub_mode')
-        sub_mode = 'SAG';
+        sub_mode = 'DGD-VR';
     else
         sub_mode = options.sub_mode;
     end     
@@ -127,48 +141,96 @@ function [w, infos] = dgdvr(problem, options)
     
     % permute samples (ToDo)
     perm_idx = 1:n;     
+    
+    prob = prob_decay_init;
 
     % main loop
     while (optgap > tol_optgap) && (epoch < max_epoch)
 
-        for j=1:num_of_bachces
+        % update step-size
+        if strcmp(step_alg, 'decay')
+            step = step_init / (1 + step_init * lambda * iter);
+        end
+        
+        % batches to be update
+        if epoch == 1
+            % compute full gradient
+            full_grad = problem.full_grad(w) / problem.samples();
+            % store w
+            w0 = w;
+            grad_calc_count = grad_calc_count + n;   
+
+            for j=1:num_of_bachces
+
+                % update step-size
+                if strcmp(step_alg, 'decay')
+                    step = step_init / (1 + step_init * lambda * iter);
+                end                  
+
+                % calculate variance reduced gradient
+                start_index = (j-1) * batch_size + 1;
+                indice_j = perm_idx(start_index:start_index+batch_size-1);
+                grad = problem.grad(w, indice_j);
+                grad_0 = problem.grad(w0, indice_j);
+                
+                grad_array(:, j) = grad;  
+
+                % update w
+                w = w - step * (full_grad + (grad - grad_0) / batch_size);
+                iter = iter + 1;
+            end
+            grad_ave = sum(grad_array, 2) / n;
+        else
+            batch_index = find(binornd(1, prob, 1, num_of_bachces));
             
+            grad_aggregate = zeros(d, 1);
+            for jj=1:length(batch_index)
+                j = batch_index(jj);
+
+                % calculate gradient
+                start_index = (j-1) * batch_size + 1;
+                indice_j = perm_idx(start_index:start_index+batch_size-1);
+                grad = problem.grad(w, indice_j);
+
+                grad_aggregate = grad_aggregate + (grad - grad_array(:, j));
+
+                % replace with new grad
+                grad_array(:, j) = grad;  
+
+            end
+
             % update step-size
             if strcmp(step_alg, 'decay')
                 step = step_init / (1 + step_init * lambda * iter);
             end
-            
-            % calculate gradient
-            start_index = (j-1) * batch_size + 1;
-            indice_j = perm_idx(start_index:start_index+batch_size-1);
-            grad = problem.grad(w, indice_j);
-            
-            % update average gradient
-            if strcmp(sub_mode, 'SAG')
-                grad_ave = grad_ave + (grad - grad_array(:, j)) / num_of_bachces;
-            else % SAGA
-                grad_ave = grad_ave + (grad - grad_array(:, j));                
-            end
-            % replace with new grad
-            grad_array(:, j) = grad;  
-            
+
+            grad_ave = grad_ave + grad_aggregate / (length(batch_index) * batch_size); 
+
             % update w
             w = w - step * grad_ave;
+
+    %         if epoch > 1 && infos.cost(end) > infos.cost(end-1)
+    %             prob = min(prob_max, prob * (1+prob_decay_rate));
+    %         end
+            prob = min(prob_max, prob * (1+prob_decay_rate));
+
             iter = iter + 1;
+            
+            % count gradient evaluations
+            grad_calc_count = grad_calc_count + length(batch_index) * batch_size;    
         end
         
         % measure elapsed time
         elapsed_time = toc(start_time);
         
-        % count gradient evaluations
-        grad_calc_count = grad_calc_count + num_of_bachces * batch_size;        
+            
         % update epoch
         epoch = epoch + 1;
         % calculate optgap
         f_val = problem.cost(w);
         optgap = f_val - f_opt; 
         % calculate norm of full gradient
-        gnorm = norm(problem.full_grad(w));      
+        gnorm = norm(problem.full_grad(w) / problem.samples());      
 
         % store infos
         infos.iter = [infos.iter epoch];
@@ -183,7 +245,7 @@ function [w, infos] = dgdvr(problem, options)
 
         % display infos
         if verbose > 0
-            fprintf('%s: Epoch = %03d, cost = %.16e, optgap = %.4e\n', sub_mode, epoch, f_val, optgap);
+            fprintf('%s: Epoch = %03d, cost = %.16e, optgap = %.4e, prob = %.6e\n', sub_mode, epoch, f_val, optgap, prob);
         end
     end
     
