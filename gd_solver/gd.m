@@ -81,6 +81,13 @@ function [w, infos] = gd(problem, options)
         sub_mode = options.sub_mode;
     end  
     
+    if ~isfield(problem, 'regularization')
+        regularization = false;
+    else
+        regularization = true;
+        disp('regularized!');
+    end
+    
 
     % initialise
     iter = 0;
@@ -138,7 +145,9 @@ function [w, infos] = gd(problem, options)
             w = w - step * grad;            
         end
         
-
+        if regularization == true
+            w = problem.regularization.proximal(w, step);
+        end
         
         % calculate gradient
         grad = problem.full_grad(w) / problem.samples();

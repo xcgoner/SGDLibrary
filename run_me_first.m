@@ -27,6 +27,10 @@ cd gd_solver/;
 addpath(genpath(pwd));
 cd ..;
 
+cd proximal/;
+addpath(genpath(pwd));
+cd ..;
+
 cd gd_test/;
 addpath(genpath(pwd));
 cd ..;

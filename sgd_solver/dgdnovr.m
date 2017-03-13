@@ -110,7 +110,14 @@ function [w, infos] = dgdvr(problem, options)
         store_w = false;
     else
         store_w = options.store_w;
-    end      
+    end    
+    
+    if ~isfield(problem, 'regularization')
+        regularization = false;
+    else
+        regularization = true;
+        disp('regularized!');
+    end
     
     
     % initialize
@@ -175,6 +182,10 @@ function [w, infos] = dgdvr(problem, options)
         
         % update w
         w = w - step * grad_aggregate / (length(batch_index) * batch_size);
+        
+        if regularization == true
+            w = problem.regularization.proximal(w, step);
+        end
         
         if epoch > 1 && infos.cost(end) > infos.cost(end-1)
             prob = min(prob_max, prob * (1+prob_decay_rate));
