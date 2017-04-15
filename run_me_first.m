@@ -31,6 +31,10 @@ cd proximal/;
 addpath(genpath(pwd));
 cd ..;
 
+cd reader/;
+addpath(genpath(pwd));
+cd ..;
+
 cd gd_test/;
 addpath(genpath(pwd));
 cd ..;
