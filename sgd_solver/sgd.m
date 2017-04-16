@@ -13,11 +13,6 @@ function [w, infos] = sgd(problem, options)
 % Created by H.Kasai on Feb. 15, 2016
 % Modified by H.Kasai on Jan. 12, 2017
 
-
-    % set dimensions and samples
-    d = problem.dim();
-    n = problem.samples();  
-
     % extract options
     if ~isfield(options, 'step_init')
         step_init = 0.1;
@@ -48,19 +43,18 @@ function [w, infos] = sgd(problem, options)
         tol_optgap = 1.0e-12;
     else
         tol_optgap = options.tol_optgap;
-    end        
-
-    if ~isfield(options, 'batch_size')
-        batch_size = 10;
-    else
-        batch_size = options.batch_size;
-    end
-    num_of_bachces = floor(n / batch_size);    
+    end         
     
     if ~isfield(options, 'max_epoch')
         max_epoch = 100;
     else
         max_epoch = options.max_epoch;
+    end 
+    
+    if ~isfield(options, 'max_iter')
+        max_iter = 10;
+    else
+        max_iter = options.max_iter;
     end 
     
     if ~isfield(options, 'w_init')
@@ -93,6 +87,25 @@ function [w, infos] = sgd(problem, options)
         store_w = options.store_w;
     end      
     
+    if ~isfield(options, 'reader')
+        reader = false;
+    else
+        reader = options.reader;
+    end   
+    
+    if ~isfield(problem, 'test_data')
+        test_data = false;
+    else
+        test_data = true;
+    end
+    
+    if ~isfield(problem, 'regularization')
+        regularization = false;
+    else
+        regularization = true;
+        disp('regularized!');
+    end
+    
     
     % initialize
     iter = 0;
@@ -104,10 +117,9 @@ function [w, infos] = sgd(problem, options)
     infos.iter = epoch;
     infos.time = 0;    
     infos.grad_calc_count = grad_calc_count;
-    f_val = problem.cost(w);
+    f_val = problem.rmse(problem.test_data.y, problem.prediction(problem.test_data.X, w))
     optgap = f_val - f_opt;
     infos.optgap = optgap;
-    infos.gnorm = norm(problem.full_grad(w));    
     infos.cost = f_val;
     if store_w
         infos.w = w;       
@@ -118,51 +130,54 @@ function [w, infos] = sgd(problem, options)
 
     % main loop
     while (optgap > tol_optgap) && (epoch < max_epoch)
-
-        % permute samples
-        if permute_on
-            perm_idx = randperm(n);
-        else
-            perm_idx = 1:n;
-        end
-
-        for j=1:num_of_bachces
-            
-            % update step-size
-            if strcmp(step_alg, 'decay')
-                step = step_init / (1 + step_init * lambda * iter);
-            end     
-            
-            % calculate gradient
-            start_index = (j-1) * batch_size + 1;
-            indice_j = perm_idx(start_index:start_index+batch_size-1);
-            grad =  problem.grad(w, indice_j);
-
-            % update w
-            w = w - step * grad / batch_size;
-            iter = iter + 1;
+        
+        batch = reader.nextBatch();
+        
+        f_val = problem.rmse(problem.test_data.y, problem.prediction(problem.test_data.X, w));
+        w_tmp = w;
+        % multiple steps for one mini-batch
+        for i = 1:max_iter
+            grad = problem.full_grad(batch.X, batch.y, w_tmp);
+            w_tmp = w_tmp - step * grad;
+            if regularization == true
+                % search proximal
+                f_val_tmp = problem.rmse(problem.test_data.y, problem.prediction(problem.test_data.X, w_tmp))
+                w_prox = w_tmp;
+                for j = 1:6
+                    w_tmp_1 = problem.regularization.proximal(w_tmp, step * (10^j));
+                    f_val_tmp_1 = problem.rmse(problem.test_data.y, problem.prediction(problem.test_data.X, w_tmp_1))
+                    if f_val_tmp_1 < f_val_tmp
+                        f_val_tmp = f_val_tmp_1;
+                        w_prox = w_tmp_1;
+                    end
+                end
+                w_tmp = w_prox;
+            end
+            f_val_tmp = problem.rmse(problem.test_data.y, problem.prediction(problem.test_data.X, w_tmp))
+            if f_val_tmp < f_val
+                f_val = f_val_tmp;
+                w = w_tmp;
+            else 
+                break;
+            end
         end
         
         % measure elapsed time
         elapsed_time = toc(start_time);
         
         % count gradient evaluations
-        grad_calc_count = grad_calc_count + num_of_bachces * batch_size;        
+        grad_calc_count = grad_calc_count + length(batch.y);        
         % update epoch
         epoch = epoch + 1;
         % calculate optimality gap
-        f_val = problem.cost(w);
-        optgap = f_val - f_opt;  
-        % calculate norm of full gradient
-        gnorm = norm(problem.full_grad(w));        
+        optgap = f_val - f_opt;        
 
         % store infos
         infos.iter = [infos.iter epoch];
         infos.time = [infos.time elapsed_time];
         infos.grad_calc_count = [infos.grad_calc_count grad_calc_count];
         infos.optgap = [infos.optgap optgap];
-        infos.cost = [infos.cost f_val];
-        infos.gnorm = [infos.gnorm gnorm];         
+        infos.cost = [infos.cost f_val];     
         if store_w
             infos.w = [infos.w w];         
         end           

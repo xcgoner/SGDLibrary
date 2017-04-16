@@ -10,7 +10,7 @@ function regularization = prox_l1(lambda)
     end
 
     regularization.proximal = @proximal;
-    function x = proximal(v, , step_size)
+    function x = proximal(v, step_size)
         x = max(0, v - lambda * step_size) - max(0, -v - lambda * step_size);
     end
 
